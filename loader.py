@@ -1,36 +1,49 @@
 #!/usr/bin/env python3
-import getpass
-import os
-from pathlib import Path
 import subprocess
+from pathlib import Path
+import sys
+import base64
 
-# Path to encrypted file
+# === Config ===
 ENC_FILE = Path("mysc.py.enc")
 
-if not ENC_FILE.exists():
-    print("Encrypted file not found:", ENC_FILE)
-    exit(1)
+# Password  ko base64 me encode kiya gaya hai:
+# "" -> "MTkyMA=="
+_hidden_pass = "MTkyMA=="
 
-# Ask password
-password = getpass.getpass("Enter password: ")
+def get_password():
+    # Base64 decode karke original password wapas banate hain
+    return base64.b64decode(_hidden_pass.encode()).decode()
 
-# Decrypt using OpenSSL into memory (stdout)
-try:
-    result = subprocess.run(
-        ["openssl", "enc", "-aes-256-cbc", "-d", "-pbkdf2", "-salt",
-         "-in", str(ENC_FILE), "-pass", "pass:" + password],
-        capture_output=True
-    )
-except FileNotFoundError:
-    print("OpenSSL not found. Install it: pkg install openssl")
-    exit(1)
+def main():
+    if not ENC_FILE.exists():
+        print("❌ Encrypted file not found:", ENC_FILE)
+        sys.exit(1)
 
-if result.returncode != 0:
-    print("Decryption failed. Wrong password or corrupted file.")
-    exit(1)
+    password = get_password()
 
-# Decrypted code in memory
-code = result.stdout.decode("utf-8")
+    try:
+        result = subprocess.run(
+            ["openssl", "enc", "-aes-256-cbc", "-d", "-pbkdf2", "-salt",
+             "-in", str(ENC_FILE), "-pass", f"pass:{password}"],
+            capture_output=True
+        )
+    except FileNotFoundError:
+        print("❌ OpenSSL not installed. Install in Termux: pkg install openssl")
+        sys.exit(1)
 
-# Execute decrypted code
-exec(code)
+    if result.returncode != 0:
+        print("❌ Decryption failed. Wrong password or corrupted file.")
+        sys.exit(1)
+
+    try:
+        code = result.stdout.decode("utf-8")
+    except UnicodeDecodeError:
+        print("❌ Could not decode decrypted content (not valid Python).")
+        sys.exit(1)
+
+    print("🔓 Decryption successful. Running script...\n")
+    exec(code, globals())
+
+if __name__ == "__main__":
+    main()
